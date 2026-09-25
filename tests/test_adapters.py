@@ -54,6 +54,48 @@ def test_jev_uses_token_without_leaking_it(monkeypatch) -> None:
     assert "super-secret-token" not in str(response)
 
 
+def test_jev_health_is_cached_and_not_an_inference(monkeypatch) -> None:
+    monkeypatch.setenv("TYPESAFE_API_KEY", "super-secret-token")
+    calls: list[str] = []
+
+    def fake_get(url, headers, timeout):
+        calls.append(url)
+        assert headers["Authorization"] == "Bearer super-secret-token"
+        assert "super-secret-token" not in url
+        return httpx.Response(
+            200,
+            json={"models": [{"name": "jev-latest", "description": "flagship", "release_date": "2026-09-15"}]},
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    adapter = JevAdapter(health_ttl_s=60)
+    first = adapter.health_sync()
+    second = adapter.health_sync()
+    assert first.ok is True
+    assert first.detail == "reachable"
+    assert first.version == "jev-latest"
+    assert second == first
+    assert adapter.probe_count == 1
+    assert calls == ["https://api.typesafe.ai/v1/models"]
+
+
+def test_jev_health_auth_failure_is_cached(monkeypatch) -> None:
+    monkeypatch.setenv("TYPESAFE_API_KEY", "super-secret-token")
+
+    def fake_get(url, headers, timeout):
+        return httpx.Response(401, json={"error": "nope"})
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+    adapter = JevAdapter(health_ttl_s=60)
+    health = adapter.health_sync()
+    adapter.health_sync()
+    assert health.ok is False
+    assert health.permanent is True
+    assert health.detail == "authentication failed"
+    assert "super-secret-token" not in health.detail
+    assert adapter.probe_count == 1
+
+
 def test_jev_auth_failure(monkeypatch) -> None:
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     monkeypatch.delenv("JEV_API_KEY", raising=False)

@@ -35,7 +35,9 @@ Authorization: Bearer <key>
 {"model": "jev-latest", "state": ..., "questions": ...}
 ```
 
-The key is read from the configured environment variable, then `TYPESAFE_API_KEY`, then `JEV_API_KEY`. It is not logged and it is not copied into errors. Health in 0.1 means "a key is configured". Keziah does not spend a billed call to probe Jev.
+The key is read from the configured environment variable, then `TYPESAFE_API_KEY`, then `JEV_API_KEY`. It is not logged and it is not copied into errors.
+
+Health is a live `GET /v1/models` when a key is set. That route lists the account's model names. It is not a `/v1/systemone` inference, so it is not billed as a decision. The result is cached for `health_ttl_s` (default 30 seconds). Listing models, `keziah show jev`, and every job all read that cache, so a batch does not open a health connection per decision. No key means the model is unavailable and no request is sent. `401` is a permanent authentication failure. A timeout or `5xx` is temporary and stays cached until the TTL expires.
 
 | Status | Treatment |
 | --- | --- |

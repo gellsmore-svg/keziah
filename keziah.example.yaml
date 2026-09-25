@@ -74,6 +74,8 @@ models:
     api_key_env: TYPESAFE_API_KEY
     model_name: jev-latest
     timeout_ms: 30000
+    # Cached GET /v1/models. Not a billed inference, and not repeated per job.
+    health_ttl_s: 30
 
   # Another service that speaks POST /v1/systemone.
   # custom:

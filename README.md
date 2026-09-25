@@ -169,6 +169,7 @@ keziah queue requeue <job-id>
 keziah queue cleanup
 keziah health
 keziah benchmark --jobs 100 --mode memory
+keziah benchmark --model laya --jobs 8 --concurrency 1
 ```
 
 Add `--json` for machine-readable output. Commands other than `serve` talk to `http://127.0.0.1:8766` unless you pass `--embedded` or `--url`.

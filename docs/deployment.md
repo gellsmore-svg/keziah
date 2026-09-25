@@ -44,6 +44,7 @@ Scrape `GET /metrics`. Useful series include queue depth, submit/start/success/f
 ```bash
 keziah benchmark --jobs 100 --mode memory
 keziah benchmark --jobs 100 --mode hybrid --output bench.json
+keziah benchmark --model laya --jobs 8 --mode memory --concurrency 1
 ```
 
-The default model is `mock`. The JSON report is what this process measured: raw adapter time, submit time, queue time, end-to-end time, and throughput. It is not a claim about Laya or Jev, and it is not a pass/fail threshold. Run it on the machine that will serve traffic if you need those numbers.
+The default model is `mock`. `--model laya` loads the local checkpoint once (`warmup_seconds` in the report) and then times both the adapter and the queue. `--model jev` calls the real API and needs a key; without one the jobs fail instead of falling back. The JSON report is what this process measured. It is not a pass/fail threshold.

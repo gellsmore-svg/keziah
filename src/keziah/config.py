@@ -115,6 +115,8 @@ class ModelSettings(BaseModel):
     checkpoint: str | None = None
     latency_ms: float = 0.0
     supports_native_batch: bool = False
+    # How long a live remote health probe may be reused. Jobs read this cache.
+    health_ttl_s: float = 30.0
 
     @field_validator("max_concurrency")
     @classmethod

@@ -57,7 +57,7 @@ Pyright and ruff are clean on `src` and `tests`. The suite uses the mock adapter
 - One process owns one SQLite file. That is the whole deployment story for 0.1.
 - Disk mode's fairness looks at a bounded window per class. Hybrid is the mode that tracks every ready job.
 - Native-batch companions share the slot of the first job. They do not each pass the fairness picker.
-- Jev "health" means a key is present. A live probe would cost a billed call.
+- Jev health is a cached `GET /v1/models`. It is live, and it is not repeated for every job. It is not a full decision call.
 - Laya availability means the package imports. Weights load on first use or on `preload`.
 - In-process callbacks exist. HTTP callbacks do not.
 - TLS stops at a reverse proxy.

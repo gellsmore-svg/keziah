@@ -29,12 +29,16 @@ class JevAdapter:
         api_key_env: str | None = "TYPESAFE_API_KEY",
         model_name: str = "jev-latest",
         timeout_s: float = 30.0,
+        health_ttl_s: float = 30.0,
     ) -> None:
         self.model_id = model_id
         self.endpoint = endpoint.rstrip("/")
         self.api_key_env = api_key_env
         self.model_name = model_name
         self.timeout_s = timeout_s
+        self.health_ttl_s = health_ttl_s
+        self.probe_count = 0
+        self._health_cache: tuple[float, ModelHealth] | None = None
         self.capabilities = AdapterCapabilities(
             supports_native_batch=False,
             local=False,
@@ -42,15 +46,19 @@ class JevAdapter:
         )
 
     def health_sync(self) -> ModelHealth:
-        if self._key() is None:
-            env_name = self.api_key_env or "TYPESAFE_API_KEY"
-            return ModelHealth(
-                ok=False,
-                permanent=True,
-                detail=f"{env_name} is not set",
-                version=self.model_name,
-            )
-        return ModelHealth(ok=True, detail="configured", version=self.model_name)
+        """Live check against ``GET /v1/models``, reused for ``health_ttl_s``.
+
+        Listing models is not an inference call. Job execution reads this cache,
+        so a batch does not probe Jev once per decision.
+        """
+        now = time.monotonic()
+        cached = self._health_cache
+        if cached is not None and (now - cached[0]) < self.health_ttl_s:
+            return cached[1]
+        health = self._probe()
+        self.probe_count += 1
+        self._health_cache = (now, health)
+        return health
 
     async def health(self) -> ModelHealth:
         return self.health_sync()
@@ -108,6 +116,70 @@ class JevAdapter:
 
     def _headers(self, key: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+
+    def _probe(self) -> ModelHealth:
+        key = self._key()
+        env_name = self.api_key_env or "TYPESAFE_API_KEY"
+        if key is None:
+            return ModelHealth(
+                ok=False,
+                permanent=True,
+                detail=f"{env_name} is not set",
+                version=self.model_name,
+            )
+        try:
+            response = httpx.get(
+                f"{self.endpoint}/v1/models",
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=min(self.timeout_s, 5.0),
+            )
+        except httpx.TimeoutException:
+            return ModelHealth(
+                ok=False,
+                permanent=False,
+                detail="jev health check timed out",
+                version=self.model_name,
+            )
+        except httpx.TransportError:
+            return ModelHealth(
+                ok=False,
+                permanent=False,
+                detail="jev health check failed to connect",
+                version=self.model_name,
+            )
+        status = response.status_code
+        if status == 200:
+            return ModelHealth(ok=True, detail="reachable", version=self._version_from(response))
+        if status in {401, 403}:
+            return ModelHealth(ok=False, permanent=True, detail="authentication failed", version=self.model_name)
+        if status == 429 or status >= 500:
+            return ModelHealth(
+                ok=False,
+                permanent=False,
+                detail=f"jev health check returned HTTP {status}",
+                version=self.model_name,
+            )
+        return ModelHealth(
+            ok=False,
+            permanent=True,
+            detail=f"jev health check returned HTTP {status}",
+            version=self.model_name,
+        )
+
+    def _version_from(self, response: httpx.Response) -> str:
+        try:
+            payload = response.json()
+        except ValueError:
+            return self.model_name
+        models = payload.get("models") if isinstance(payload, dict) else None
+        if not isinstance(models, list):
+            return self.model_name
+        names = [item.get("name") for item in models if isinstance(item, dict) and isinstance(item.get("name"), str)]
+        if self.model_name in names:
+            return self.model_name
+        if names:
+            return str(names[0])
+        return self.model_name
 
     def _key(self) -> str | None:
         return secret_from_env(self.api_key_env, "TYPESAFE_API_KEY", "JEV_API_KEY")

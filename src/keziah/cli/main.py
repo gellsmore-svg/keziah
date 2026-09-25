@@ -408,8 +408,9 @@ def benchmark(
     model: str = typer.Option("mock", "--model"),
     output: Path | None = typer.Option(None, "--output"),
     mode: str | None = typer.Option(None, "--mode", help="memory, disk, or hybrid."),
+    concurrency: int | None = typer.Option(None, "--concurrency"),
 ) -> None:
-    """Run the in-process benchmark and print JSON. Does not call a remote model."""
+    """Measure one configured model. The default model is the offline mock."""
     from keziah.bench import run_benchmark
 
     state = _ctx(ctx)
@@ -418,7 +419,13 @@ def benchmark(
     if chosen_mode:
         settings.queue.mode = chosen_mode  # type: ignore[assignment]
     # Benchmark defaults to the mock model even when the config also lists Laya and Jev.
-    report = run_benchmark(jobs=jobs, model=model, mode=settings.queue.mode, settings=settings)
+    report = run_benchmark(
+        jobs=jobs,
+        model=model,
+        mode=settings.queue.mode,
+        concurrency=concurrency,
+        settings=settings,
+    )
     text = json.dumps(report, indent=2)
     if output is not None:
         output.write_text(text + "\n", encoding="utf-8")

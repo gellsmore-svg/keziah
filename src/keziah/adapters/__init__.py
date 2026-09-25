@@ -38,6 +38,7 @@ def build_adapter(model_id: str, spec: ModelSettings) -> Any:
             api_key_env=spec.api_key_env or "TYPESAFE_API_KEY",
             model_name=spec.model_name or "jev-latest",
             timeout_s=spec.timeout_ms / 1000.0,
+            health_ttl_s=spec.health_ttl_s,
         )
     if kind in {"http", "systemone-http", "generic"}:
         from keziah.adapters.http import GenericSystemOneHTTPAdapter
