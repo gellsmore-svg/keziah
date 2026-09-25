@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Local runtime
+*.db
+*.db-wal
+*.db-shm
+.env
+.keziah/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Model weights and credentials must never be committed
+*.gguf
+*.pt
+*.bin
+*.safetensors
+credentials.json
+secrets.yaml

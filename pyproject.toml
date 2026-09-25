@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "keziah"
+version = "0.1.0"
+description = "Lightweight queue and execution service for System-1 models such as Laya and Jev."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "gellsmore-svg" }]
+keywords = ["system-1", "queue", "laya", "jev", "inference", "batch"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "pydantic>=2.7",
+    "typer>=0.12",
+    "httpx>=0.27",
+    "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4,<0.16",
+    "pyright>=1.1.390",
+]
+laya = ["laya"]
+
+[project.scripts]
+keziah = "keziah.cli.main:main"
+
+[project.urls]
+Homepage = "https://github.com/gellsmore-svg/keziah"
+Repository = "https://github.com/gellsmore-svg/keziah"
+Issues = "https://github.com/gellsmore-svg/keziah/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+keziah = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+addopts = "-ra"
+markers = [
+    "integration: optional tests that need a real System-1 model or network",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+lint.select = ["E4", "E7", "E9", "F"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+reportMissingTypeStubs = false
+venvPath = "."
+venv = ".venv"
