@@ -1,0 +1,21 @@
+{
+  "state": {
+    "message": "I've asked three times and nobody has fixed it."
+  },
+  "questions": {
+    "frustration": {
+      "type": "score",
+      "instructions": "Rate the customer's frustration.",
+      "criteria": ["calm", "frustrated", "very angry"]
+    },
+    "needs_human": {
+      "type": "noul",
+      "instructions": "Does this require human intervention?"
+    },
+    "department": {
+      "type": "choice",
+      "instructions": "Which team should deal with this?",
+      "options": ["billing", "technical", "sales"]
+    }
+  }
+}

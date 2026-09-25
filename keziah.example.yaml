@@ -1,0 +1,97 @@
+# Keziah example configuration.
+# Precedence: CLI flags, then environment variables, then this file, then defaults.
+# Copy to ./keziah.yaml or ~/.keziah/config.yaml, or pass --config.
+
+queue:
+  mode: hybrid
+  sqlite_path: ~/.keziah/keziah.db
+  busy_timeout_ms: 5000
+  reconcile_interval_s: 2
+
+server:
+  host: 127.0.0.1
+  port: 8766
+  # Prefer KEZIAH_API_KEY over putting a token in this file.
+  api_key_env: KEZIAH_API_KEY
+  cancel_on_disconnect: false
+  log_level: info
+  log_json: true
+
+scheduler:
+  max_queued_jobs: 100000
+  max_batch_size: 200000
+  max_request_bytes: 1000000
+  max_batch_bytes: 64000000
+  default_class: normal
+  lease_seconds: 30
+  recovery_interval_s: 0.25
+  default_max_attempts: 3
+  default_execution_timeout_ms: 30000
+  class_weights:
+    interactive: 8
+    normal: 4
+    batch: 2
+    bulk: 1
+  starvation_seconds: 10
+
+retention:
+  success_seconds: 604800
+  failure_seconds: 2592000
+  event_seconds: 604800
+
+models:
+  mock:
+    adapter: mock
+    enabled: true
+    execution: async
+    max_concurrency: 8
+    local: true
+    supports_native_batch: true
+    max_native_batch_size: 8
+
+  laya:
+    adapter: laya
+    enabled: true
+    execution: thread
+    # One forward pass at a time. Raise this only if you know the checkpoint is safe to share.
+    max_concurrency: 1
+    local: true
+    supports_native_batch: true
+    max_native_batch_size: 8
+    max_native_batch_wait_ms: 0
+    # device: cpu
+    # threads: 4
+    # preload: false
+    # checkpoint: english
+
+  jev:
+    adapter: jev
+    enabled: true
+    execution: async
+    max_concurrency: 16
+    local: false
+    endpoint: https://api.typesafe.ai
+    api_key_env: TYPESAFE_API_KEY
+    model_name: jev-latest
+    timeout_ms: 30000
+
+  # Another service that speaks POST /v1/systemone.
+  # custom:
+  #   adapter: http
+  #   endpoint: http://127.0.0.1:9000
+  #   api_key_env: CUSTOM_SYSTEMONE_KEY
+  #   model_name: custom-system-1
+  #   execution: async
+  #   max_concurrency: 8
+
+aliases:
+  default: mock
+  local: laya
+  remote: jev
+
+# Requesting the group name may fall back. Requesting "laya" never silently uses Jev.
+model_groups:
+  emotion:
+    primary: laya
+    fallbacks:
+      - jev

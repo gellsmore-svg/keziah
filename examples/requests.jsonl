@@ -1,0 +1,3 @@
+{"state": {"message": "Message one"}, "questions": {"needs_human": {"type": "noul", "instructions": "Does this require human intervention?"}}}
+{"state": {"message": "Message two"}, "questions": {"needs_human": {"type": "noul", "instructions": "Does this require human intervention?"}}}
+{"model": "mock", "state": {"message": "Message three"}, "questions": {"department": {"type": "choice", "instructions": "Which team?", "options": ["billing", "technical", "sales"]}}}

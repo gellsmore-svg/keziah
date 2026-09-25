@@ -1,0 +1,19 @@
+# Optional. Keziah does not require Docker.
+# The host port is bound to loopback. Set KEZIAH_API_KEY before publishing wider.
+
+services:
+  keziah:
+    build: .
+    ports:
+      - "127.0.0.1:8766:8766"
+    environment:
+      KEZIAH_MODE: hybrid
+      KEZIAH_DB: /home/keziah/.keziah/keziah.db
+      KEZIAH_API_KEY: ${KEZIAH_API_KEY:-}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+    volumes:
+      - keziah-data:/home/keziah/.keziah
+    command: ["serve", "--mode", "hybrid", "--host", "0.0.0.0", "--port", "8766"]
+
+volumes:
+  keziah-data:
