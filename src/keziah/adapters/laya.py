@@ -87,10 +87,17 @@ class LayaAdapter:
         if not requests:
             return []
         router = self._router_blocking(preload=self.preload)
-        payload = [{"state": item.state, "questions": item.questions} for item in requests]
-        if self.checkpoint:
-            for item in payload:
-                item["model"] = self.checkpoint
+        payload = []
+        for item in requests:
+            entry: dict[str, Any] = {"state": item.state, "questions": item.questions}
+            params = item.parameters or {}
+            checkpoint = params.get("checkpoint") or self.checkpoint
+            if checkpoint:
+                entry["model"] = checkpoint
+            for key in ("task", "lang", "lang_guess"):
+                if params.get(key) is not None:
+                    entry[key] = params[key]
+            payload.append(entry)
         started = time.perf_counter()
         try:
             with self._lock:

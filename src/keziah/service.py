@@ -16,7 +16,7 @@ import time
 import uuid
 from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Callable
 
 from keziah.clock import Clock, isoformat, parse_iso
@@ -107,7 +107,7 @@ class Keziah:
         self._events_lock = threading.Lock()
         self._events: dict[str, threading.Event] = {}
         self._callbacks: dict[str, Callback] = {}
-        self._lost: set[str] = set()
+        self._lost: set[tuple[str, str]] = set()
         if start_workers:
             self.start()
 
@@ -259,7 +259,7 @@ class Keziah:
             activated_at=None,
             idempotency_key=None,
             idempotency_hash=None,
-            deadline_at=deadline_at,
+            deadline_at=_normalise_deadline(deadline_at),
         )
         self.backend.begin_batch(batch)
         hasher = hashlib.sha256()
@@ -276,7 +276,7 @@ class Keziah:
                     state=raw.get("state"),
                     questions=raw.get("questions") or {},
                     client_id=str(raw.get("client_id") or client_id),
-                    priority=int(raw.get("priority", priority)),
+                    priority=raw.get("priority", priority),
                     scheduling_class=str(raw.get("scheduling_class") or scheduling_class),
                     idempotency_key=raw.get("idempotency_key"),
                     parameters=raw.get("parameters") or {},
@@ -512,12 +512,22 @@ class Keziah:
         validate_state(state)
         normalised = normalise_questions(questions, max_questions=self.settings.scheduler.max_questions)
         parameters = dict(parameters or {})
+        deadline_at = _normalise_deadline(deadline_at)
+        if execution_timeout_ms is not None and (
+            isinstance(execution_timeout_ms, bool) or not isinstance(execution_timeout_ms, int)
+        ):
+            raise ValidationError("execution_timeout_ms must be an integer")
         resolution = self.registry.resolve(model)
         payload = {"state": state, "questions": normalised, "parameters": parameters}
         size = len(canonical_json(payload).encode("utf-8"))
         if size > self.settings.scheduler.max_request_bytes:
             raise BackpressureError("request is too large", code="request_too_large")
-        attempts = self.settings.scheduler.default_max_attempts if max_attempts is None else int(max_attempts)
+        if max_attempts is None:
+            attempts = self.settings.scheduler.default_max_attempts
+        elif isinstance(max_attempts, bool) or not isinstance(max_attempts, int):
+            raise ValidationError("max_attempts must be an integer")
+        else:
+            attempts = max_attempts
         if attempts < 1:
             raise ValidationError("max_attempts must be >= 1")
         now = isoformat(self.clock.now())
@@ -555,7 +565,7 @@ class Keziah:
             model_version=None,
             state="queued" if batch_id is None else "staged",
             payload=payload,
-            questions_hash=payload_hash(normalised),
+            questions_hash=_coalesce_hash(normalised, parameters),
             attempt_count=0,
             max_attempts=attempts,
             lease_owner=None,
@@ -605,7 +615,9 @@ class Keziah:
             started = 0
             try:
                 now = isoformat(self.clock.now())
-                self.backend.maintenance(now)
+                report = self.backend.maintenance(now)
+                for job_id in getattr(report, "finished", ()) or ():
+                    self._deliver(job_id)
                 started = await self._dispatch_available()
             except Exception:
                 log.exception("dispatcher iteration failed")
@@ -694,7 +706,25 @@ class Keziah:
                     continue
                 if not self.backend.mark_running(job.job_id, owner, lease_until, now_iso):
                     continue
-                runnable.append(current)
+                fresh = self.backend.get_job(job.job_id) or current
+                try:
+                    target, fallback = self._execution_target(fresh)
+                except Exception as exc:
+                    if self._settle_failure(fresh, owner, _as_inference_error(exc)):
+                        self._deliver(fresh.job_id)
+                    continue
+                if target != model_id:
+                    # The slot belongs to model_id. Run the fallback through its own cap.
+                    fresh.fallback = fallback
+                    self.backend.release_to_queue(
+                        fresh.job_id,
+                        owner,
+                        now_iso,
+                        resolved_model=target,
+                        decrement_attempt=True,
+                    )
+                    continue
+                runnable.append(fresh)
             if not runnable:
                 return
             heartbeat = asyncio.create_task(self._heartbeat([job.job_id for job in runnable], owner))
@@ -703,13 +733,13 @@ class Keziah:
             except Exception as exc:
                 classified = _as_inference_error(exc)
                 for job in runnable:
-                    if job.job_id in self._lost:
+                    if (job.job_id, owner) in self._lost:
                         continue
                     if self._settle_failure(job, owner, classified):
                         self._deliver(job.job_id)
                 return
             for job, response in zip(runnable, responses, strict=True):
-                if job.job_id in self._lost:
+                if (job.job_id, owner) in self._lost:
                     continue
                 fresh = self.backend.get_job(job.job_id)
                 if fresh is not None and fresh.cancel_requested:
@@ -727,6 +757,8 @@ class Keziah:
                     heartbeat.cancel()
                 except RuntimeError:
                     pass
+            for job in jobs:
+                self._lost.discard((job.job_id, owner))
             self._release(model_id)
             try:
                 self._signal()
@@ -738,18 +770,15 @@ class Keziah:
         adapter = self.registry.adapter(model_id)
         prepared: list[tuple[Job, SystemOneRequest, str]] = []
         for job in jobs:
-            target, fallback = self._execution_target(job)
+            # Retargeting happens before this group is formed, on the model's own slot.
             request = SystemOneRequest(
                 state=job.payload["state"],
                 questions=job.payload["questions"],
-                model=target,
+                model=model_id,
                 parameters=dict(job.payload.get("parameters") or {}),
                 job_id=job.job_id,
             )
-            if fallback is not None:
-                job.fallback = fallback
-                job.resolved_model = target
-            prepared.append((job, request, target))
+            prepared.append((job, request, model_id))
         timeout_s = self._timeout_s(jobs[0])
         targets = {item[2] for item in prepared}
         if len(jobs) > 1 and len(targets) == 1 and hasattr(adapter, "infer_many"):
@@ -804,7 +833,8 @@ class Keziah:
                 )
         if health.permanent:
             raise PermanentInferenceError(health.detail or "model unavailable", code="model_unavailable")
-        raise RetryableInferenceError(health.detail or "model unavailable", code="model_unavailable")
+        # A cached transient probe is not a reason to spend the job's attempts.
+        return job.resolved_model, job.fallback
 
     def _settle_success(self, job: Job, owner: str, response: Any) -> None:
         now = self.clock.now()
@@ -919,7 +949,7 @@ class Keziah:
             now_iso = isoformat(now)
             for job_id in job_ids:
                 if not self.backend.extend_lease(job_id, owner, lease_until, now_iso):
-                    self._lost.add(job_id)
+                    self._lost.add((job_id, owner))
 
     def _timeout_s(self, job: Job) -> float:
         ms = job.execution_timeout_ms
@@ -1041,6 +1071,32 @@ class Keziah:
             if len(page) < 1000:
                 return rows
             offset += 1000
+
+
+def _normalise_deadline(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError("deadline_at must be a timezone-aware timestamp", code="invalid_request")
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValidationError("deadline_at must be a timezone-aware timestamp", code="invalid_request") from exc
+    if moment.tzinfo is None:
+        raise ValidationError("deadline_at must include a timezone", code="invalid_request")
+    return isoformat(moment)
+
+
+def _coalesce_hash(questions: dict[str, Any], parameters: dict[str, Any]) -> str:
+    """Jobs coalesce only when questions and inference parameters match.
+
+    ``max_len`` and ``head_max_len`` are not per item on Laya's predict_batch,
+    so a job that sets either one never shares a native batch.
+    """
+    body: dict[str, Any] = {"questions": questions, "parameters": parameters}
+    if parameters.get("max_len") is not None or parameters.get("head_max_len") is not None:
+        body["solo"] = uuid.uuid4().hex
+    return payload_hash(body)
 
 
 def _new_id(prefix: str) -> str:

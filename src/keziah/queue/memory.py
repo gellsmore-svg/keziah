@@ -520,16 +520,63 @@ class MemoryBackend:
     def release_leases(self, owner_prefix: str, now_iso: str) -> list[str]:
         """Return this worker's unfinished leases to the queue before shutdown."""
         with self._lock:
-            report = Maintenance()
             released: list[str] = []
             for job in list(self._jobs.values()):
                 if job.state not in {LEASED, RUNNING}:
                     continue
                 if not job.lease_owner or not job.lease_owner.startswith(owner_prefix):
                     continue
-                self._expire_lease(job, now_iso, report)
+                self._release_unlocked(job, job.lease_owner or "", now_iso, decrement_attempt=True)
                 released.append(job.job_id)
             return released
+
+    def release_to_queue(
+        self,
+        job_id: str,
+        owner: str,
+        now_iso: str,
+        *,
+        resolved_model: str | None = None,
+        decrement_attempt: bool = True,
+        event_kind: str = "RELEASED",
+    ) -> bool:
+        """Return a leased job to queued without treating the release as a crash."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return False
+            return self._release_unlocked(
+                job,
+                owner,
+                now_iso,
+                resolved_model=resolved_model,
+                decrement_attempt=decrement_attempt,
+                event_kind=event_kind,
+            )
+
+    def _release_unlocked(
+        self,
+        job: Job,
+        owner: str,
+        now_iso: str,
+        *,
+        resolved_model: str | None = None,
+        decrement_attempt: bool = True,
+        event_kind: str = "RELEASED",
+    ) -> bool:
+        if job.lease_owner != owner or job.state not in {LEASED, RUNNING}:
+            return False
+        if decrement_attempt:
+            job.attempt_count = max(0, job.attempt_count - 1)
+        if resolved_model:
+            job.resolved_model = resolved_model
+        job.state = QUEUED
+        job.lease_owner = None
+        job.lease_expires_at = None
+        job.updated_at = now_iso
+        self._emit(event_kind, now_iso, job_id=job.job_id, batch_id=job.batch_id, detail={"attempt": job.attempt_count})
+        self._index.add(candidate_from_job(job))
+        return True
 
     def close(self) -> None:
         with self._lock:

@@ -29,7 +29,7 @@ This note records the review of the 0.1 design and of the code that was actually
 
 ## Weaknesses found before coding, and what changed
 
-A first sketch let an old bulk backlog jump the line on every dispatch once it crossed a starvation age. That would freeze interactive work behind a large import. The picker now adds credit to every class that has work, with a capped age boost. Interactive work still wins more often. Bulk work still receives turns. Tests check both.
+A first sketch let an old bulk backlog jump the line on every dispatch once it crossed a starvation age. That would freeze interactive work behind a large import. The picker now adds credit to every class that has work. An old class receives an additive boost that stays below the base weight of every higher class, so interactive work still wins more often. Bulk work still receives turns. Tests check both.
 
 A priority tuple `(priority, skips, age)` let a client with a one-point priority lead starve everyone else, because skips never overtook priority. Score is numeric: priority, skip count, and age have explicit weights, so a skipped client catches up.
 

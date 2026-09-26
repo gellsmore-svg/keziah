@@ -70,7 +70,8 @@ class SchedulerSettings(BaseModel):
             "bulk": 1.0,
         }
     )
-    # Oldest job in a class increases that class's weight, capped at this multiple.
+    # Oldest job in a class adds up to this much weight. The boost cannot reach
+    # the base weight of any higher class, so interactive work still wins more often.
     starvation_boost_cap: float = 8.0
     starvation_seconds: float = 10.0
     # Disk mode reads this many candidates per scheduling class.

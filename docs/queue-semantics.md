@@ -17,7 +17,7 @@ running ──cancel requested──> cancelled when the attempt ends
 
 `staged` exists only inside a batch that is not yet active. Workers do not claim it.
 
-Every transition that changes durable state is one transaction (or one lock, in memory mode) and writes an event: `SUBMITTED`, `CLAIMED`, `STARTED`, `RETRY_SCHEDULED`, `LEASE_EXPIRED`, `SUCCEEDED`, `FAILED`, `CANCELLED`, `DEAD_LETTERED`, `PROMOTED`, `REQUEUED`.
+Every transition that changes durable state is one transaction (or one lock, in memory mode) and writes an event: `SUBMITTED`, `CLAIMED`, `STARTED`, `RETRY_SCHEDULED`, `LEASE_EXPIRED`, `RELEASED`, `SUCCEEDED`, `FAILED`, `CANCELLED`, `DEAD_LETTERED`, `PROMOTED`, `REQUEUED`. `RELEASED` is a voluntary return to `queued` on shutdown or when a job is handed to another model's slot. It restores the attempt that the claim had charged and never dead-letters.
 
 ## Delivery
 

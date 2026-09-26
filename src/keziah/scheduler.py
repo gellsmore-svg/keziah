@@ -52,8 +52,19 @@ def select(
         if settings.starvation_seconds > 0:
             boost = min(oldest_age / settings.starvation_seconds, settings.starvation_boost_cap)
         weight = float(settings.class_weights.get(name, 1.0))
-        credits[name] = credits.get(name, 0.0) + weight * (1.0 + boost)
-        total_base += weight * (1.0 + boost)
+        # Additive and capped below every higher class, so a backlog cannot invert priority.
+        rank = SCHEDULING_CLASSES.index(name) if name in SCHEDULING_CLASSES else len(SCHEDULING_CLASSES)
+        higher = [
+            float(settings.class_weights.get(higher_name, 1.0))
+            for higher_name in SCHEDULING_CLASSES
+            if SCHEDULING_CLASSES.index(higher_name) < rank
+        ]
+        # Stay at or below three quarters of the next higher class, and never
+        # below this class's own base weight. A backlog then cannot take the majority.
+        ceiling = (min(higher) * 0.75) if higher else weight + boost
+        effective = min(weight + boost, max(weight, ceiling))
+        credits[name] = credits.get(name, 0.0) + max(0.0, effective)
+        total_base += max(0.0, effective)
 
     def class_key(name: str) -> tuple[float, int]:
         # Equal credit falls through to the higher class (lower index).

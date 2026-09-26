@@ -271,8 +271,23 @@ def create_app(service: Keziah | None = None, settings: Settings | None = None) 
                 scheduling_class=request.query_params.get("scheduling_class"),
             )
         else:
-            payload = await request.json()
-            body = BatchBody.model_validate(payload)
+            import json
+
+            from pydantic import ValidationError as ModelValidationError
+
+            try:
+                payload = await request.json()
+                body = BatchBody.model_validate(payload)
+            except json.JSONDecodeError as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"code": "invalid_request", "message": "invalid JSON", "details": {}},
+                ) from exc
+            except ModelValidationError as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"code": "invalid_request", "message": "invalid request", "details": {}},
+                ) from exc
             jobs = [_batch_job(item) for item in body.jobs]
             receipt = _call(
                 svc.submit_batch,

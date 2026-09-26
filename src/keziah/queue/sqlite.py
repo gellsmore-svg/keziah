@@ -902,17 +902,67 @@ class SQLiteBackend:
                 "SELECT job_id, lease_owner FROM jobs WHERE state IN (?, ?)",
                 (LEASED, RUNNING),
             ).fetchall()
-            report = Maintenance()
             released: list[str] = []
             for row in rows:
                 owner = row["lease_owner"] or ""
                 if not owner.startswith(owner_prefix):
                     continue
-                self._expire_sql(row["job_id"], now_iso, report)
+                self._release_sql(row["job_id"], owner, now_iso, decrement_attempt=True)
                 released.append(row["job_id"])
             return released
 
         return self._tx(run)
+
+    def release_to_queue(
+        self,
+        job_id: str,
+        owner: str,
+        now_iso: str,
+        *,
+        resolved_model: str | None = None,
+        decrement_attempt: bool = True,
+        event_kind: str = "RELEASED",
+    ) -> bool:
+        def run() -> bool:
+            return self._release_sql(
+                job_id,
+                owner,
+                now_iso,
+                resolved_model=resolved_model,
+                decrement_attempt=decrement_attempt,
+                event_kind=event_kind,
+            )
+
+        return self._tx(run)
+
+    def _release_sql(
+        self,
+        job_id: str,
+        owner: str,
+        now_iso: str,
+        *,
+        resolved_model: str | None = None,
+        decrement_attempt: bool = True,
+        event_kind: str = "RELEASED",
+    ) -> bool:
+        row = self._job_row(job_id)
+        if row is None or row["lease_owner"] != owner or row["state"] not in {LEASED, RUNNING}:
+            return False
+        attempt = int(row["attempt_count"])
+        if decrement_attempt:
+            attempt = max(0, attempt - 1)
+        model = resolved_model or row["resolved_model"]
+        self._conn.execute(
+            """
+            UPDATE jobs
+               SET state=?, attempt_count=?, resolved_model=?, lease_owner=NULL,
+                   lease_expires_at=NULL, updated_at=?
+             WHERE job_id=?
+            """,
+            (QUEUED, attempt, model, now_iso, job_id),
+        )
+        self._emit(event_kind, now_iso, job_id=job_id, batch_id=row["batch_id"], detail={"attempt": attempt})
+        return True
 
     def close(self) -> None:
         with self._lock:
