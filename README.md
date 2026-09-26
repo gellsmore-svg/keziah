@@ -225,6 +225,7 @@ See `keziah.example.yaml` and `.env.example`. Precedence is CLI, environment, fi
 - [Deployment](docs/deployment.md)
 - [A future Redis backend](docs/redis-backend.md)
 - [Design review](docs/design-review.md)
+- [Code and requirements review, 2026-09-26](docs/review-2026-09-26.md): open work items
 
 ## Licence
 
