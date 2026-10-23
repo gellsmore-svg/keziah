@@ -22,12 +22,24 @@ Hoglah is the System-2 sibling: prompts, chat, embeddings, and other LLM work. K
 
 Version 0.1 is a single process. It can run inside one application, as a local daemon, or as a small network service. It is not a cluster.
 
+## Is it for you?
+
+**Good fit:** several applications need typed probabilistic decisions
+(choice, score, yes/no) from the same System-1 models, and you want one
+queue, one view of capacity, and recovery after crashes.
+
+**Not a fit:** chat, prompts or embeddings (use
+[Hoglah](https://github.com/gellsmore-svg/hoglah)), exactly-once execution, or
+a multi-node cluster.
+
 ## Install
 
 Python 3.12+.
 
+Keziah is not on PyPI yet; install it from GitHub:
+
 ```bash
-pip install keziah
+pip install "git+https://github.com/gellsmore-svg/keziah"
 ```
 
 From a checkout:
@@ -36,7 +48,7 @@ From a checkout:
 pip install -e ".[dev]"
 ```
 
-Laya is optional (`pip install laya`, or `pip install keziah[laya]` when you want the local model). Jev needs `TYPESAFE_API_KEY` or `JEV_API_KEY`. Neither is required to run the queue. The built-in `mock` model is deterministic and offline.
+Laya is optional (`pip install laya`, or `pip install -e ".[laya]"` from a checkout, when you want the local model). Jev needs `TYPESAFE_API_KEY` or `JEV_API_KEY`. Neither is required to run the queue. The built-in `mock` model is deterministic and offline.
 
 ## Run it
 
@@ -210,6 +222,20 @@ Each model has its own concurrency limit and execution kind (`inline`, `thread`,
 
 Scheduling classes are `interactive`, `normal`, `batch`, and `bulk`. A weighted-credit picker prefers interactive work, and a client that has been skipped inside a class gains score so one caller cannot hold the class forever. Age raises a class's weight so an old bulk backlog is not stuck behind a permanent stream of interactive work. The rule is deterministic and covered by tests.
 
+## Know before you rely on it
+
+From the [2026-09-26 review](docs/review-2026-09-26.md), still open:
+
+- **Don't point `--embedded` at a database a running server owns.**
+  Embedded CLI commands open the same SQLite file and start their own
+  dispatcher, so beside a live server they can claim its jobs or abort a
+  batch it is still staging (M9). Use `--embedded` only when no server is
+  running on that database.
+- **`/metrics` is not yet valid Prometheus text.** A scraper's parser will
+  reject it (M6).
+- **A timed-out thread-mode call keeps holding capacity** until it actually
+  finishes, so a slow Laya call can delay the jobs behind it (M8).
+
 ## Configuration
 
 See `keziah.example.yaml` and `.env.example`. Precedence is CLI, environment, file, defaults.
@@ -225,7 +251,7 @@ See `keziah.example.yaml` and `.env.example`. Precedence is CLI, environment, fi
 - [Deployment](docs/deployment.md)
 - [A future Redis backend](docs/redis-backend.md)
 - [Design review](docs/design-review.md)
-- [Code and requirements review, 2026-09-26](docs/review-2026-09-26.md): open work items
+- [Code and requirements review, 2026-09-26](docs/review-2026-09-26.md): the nine high-severity items are fixed; ten medium items (M1–M10) remain open
 
 ## Licence
 
